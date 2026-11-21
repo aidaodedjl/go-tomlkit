@@ -69,3 +69,13 @@ func Example_parseError() {
 	fmt.Println(err)
 	// Output: tomlkit: line 2, col 6: expected value after '=': "bad ="
 }
+
+// 解析错误的多行展示（带列指示）。
+func ExampleParseError_detailed() {
+	_, err := tomlkit.Parse([]byte("a = 1\nbad =\n"))
+	fmt.Println(err.(*tomlkit.ParseError).Detailed())
+	// Output:
+	// tomlkit: expected value after '='
+	//     bad =
+	//          ^
+}
