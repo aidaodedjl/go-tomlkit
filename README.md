@@ -126,6 +126,21 @@ tbl.Set("x", 1)
 doc.Set("tbl", tbl)
 ```
 
+## Performance
+
+Benchmarked on the repo (see `bench_test.go`; Apple Silicon, Go 1.27):
+
+```
+BenchmarkParse100       ~9.5 MB/s    (100-table config)
+BenchmarkParse1000     ~11.8 MB/s    (1000-table config)
+BenchmarkString1000     0.9 ms/op    (write-back, no re-render of untouched)
+BenchmarkEdit1000       3.6 ms/op    (parse + one SetPath + write-back)
+```
+
+This is a fidelity-first library: the tree keeps every byte of formatting,
+so parse throughput is not the goal (BurntSushi/go-toml are 5-10x faster
+parsers). For config-file editing workloads it is instant.
+
 ## Splitting work with BurntSushi/toml
 
 Use BurntSushi when you decode into structs and re-write from scratch.

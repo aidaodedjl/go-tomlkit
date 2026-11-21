@@ -49,6 +49,12 @@ go get github.com/aidaodedjl/go-tomlkit
 - 整表替换：`doc.Set("actions", tomlkit.NewTable())` 表头留在原位
 - 从零构建：`tomlkit.NewDocument()`
 
+## 性能
+
+保真优先：文档树保留全部格式字节，解析吞吐不是目标（BurntSushi 与
+go-toml 的纯解析快 5-10 倍）。配置文件编辑负载下毫秒级完成
+（1000 表文档的解析+编辑+写回约 3.6ms），详见 `bench_test.go`。
+
 ## 与 BurntSushi/toml 的分工
 
 解码到 struct、从零重写整个文件，用 BurntSushi。
