@@ -1,0 +1,4 @@
+crlf = true
+
+[crlf-table]
+value = 42  # comment

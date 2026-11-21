@@ -1,0 +1,16 @@
+[actions]
+play_audio = true
+
+[actions.wave]
+name = "wave"
+volume = 0.8
+tags = ["punchy", "soft"]
+
+[[actions.seq]]
+step = 1
+
+[[actions.seq]]
+step = 2
+note = """
+multi
+line"""
