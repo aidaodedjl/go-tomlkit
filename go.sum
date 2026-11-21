@@ -1,0 +1,4 @@
+github.com/BurntSushi/toml v1.5.1-0.20250415140922-f225e861e346 h1:DGlXHETPSm50+URDRnTkJqHRR3nRkAoyBTVn9zKUgoc=
+github.com/BurntSushi/toml v1.5.1-0.20250415140922-f225e861e346/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
+github.com/toml-lang/toml-test v1.6.0 h1:lZ9cKL1MmS9iXA8O8pjYSPg8F4afigKluaxxxjQkRJ8=
+github.com/toml-lang/toml-test v1.6.0/go.mod h1:W1QZN+Fs+HE8SFxTXC8RycX+UAoiLTiJrrjJVq27eV4=
