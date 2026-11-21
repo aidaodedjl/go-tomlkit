@@ -43,8 +43,11 @@ Zero third-party runtime dependencies. TOML 1.0.0.
   stays identical.
 - The output always re-parses to the same semantics as "original file plus
   your edits" (property-tested over 1000 random edit rounds).
-- Invalid TOML is rejected with line/column/snippet errors. Nothing is ever
-  silently mangled.
+- Invalid TOML is rejected with line/column/snippet errors — `ParseError.Detailed()`
+  renders the offending line with a caret for end users. Nothing is ever silently
+  mangled.
+- Go native fuzz target over the identity + re-parse invariants, seeded from
+  toml-test by category.
 
 Not goals: reformatting/pretty-printing, TOML 1.1 draft features, struct
 unmarshalling (BurntSushi already does that), concurrency safety.
