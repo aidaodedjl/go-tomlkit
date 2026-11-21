@@ -168,8 +168,14 @@ func (s *cs) scanValueRaw() (string, valueKind, bool) {
 		end = e
 	case b == '[':
 		end = s.scanBracketed(']', '[')
+		if end < 0 {
+			return "", 0, false
+		}
 	case b == '{':
 		end = s.scanBracketed('}', '{')
+		if end < 0 {
+			return "", 0, false
+		}
 	default:
 		end = s.scanBareInCompound()
 		if end < 0 {
