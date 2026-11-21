@@ -35,7 +35,7 @@ go get github.com/aidaodedjl/go-tomlkit
   property 测试验证）。
 - 非法 TOML 带行/列/原文片段报错拒绝，绝不静默损坏。
 
-非目标：重排版、TOML 1.1 draft 特性、struct 绑定（BurntSushi 已覆盖）、
+非目标：重排版、TOML 1.1 draft 特性、struct 绑定（BurntSushi/toml 已覆盖）、
 并发安全。路径糖不穿透表数组（[[x]]）：用 `Get("x").Array()` 导航后
 以元素级 API（`Set(i, *Table)` / `Append(*Table)`）编辑。
 
@@ -51,13 +51,13 @@ go get github.com/aidaodedjl/go-tomlkit
 
 ## 性能
 
-保真优先：文档树保留全部格式字节，解析吞吐不是目标（BurntSushi 与
+保真优先：文档树保留全部格式字节，解析吞吐不是目标（BurntSushi/toml 与
 go-toml 的纯解析快 5-10 倍）。配置文件编辑负载下毫秒级完成
 （1000 表文档的解析+编辑+写回约 3.6ms），详见 `bench_test.go`。
 
 ## 与 BurntSushi/toml 的分工
 
-解码到 struct、从零重写整个文件，用 BurntSushi。
+解码到 struct、从零重写整个文件，用 BurntSushi/toml。
 文件属于人类、改完必须原样还回去，用 go-tomlkit。
 
 ## 许可

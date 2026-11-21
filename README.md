@@ -1,8 +1,10 @@
 # go-tomlkit
 
-Round-trip faithful TOML editing for Go — the missing counterpart to Python's
-[tomlkit](https://github.com/sdispater/tomlkit) and Rust's
-[toml-edit](https://github.com/toml-rs/toml-edit).
+Round-trip faithful TOML editing for Go: edit a document and write it back
+with untouched parts byte-for-byte identical. Python has
+[tomlkit](https://github.com/sdispather/tomlkit) and Rust has
+[toml-edit](https://github.com/toml-rs/toml-edit) for this; until now Go
+had neither.
 
 BurntSushi/toml and pelletier/go-toml parse TOML into values and re-serialize
 the whole document: comments, blank lines, key order, and quoting styles are
@@ -50,7 +52,7 @@ Zero third-party runtime dependencies. TOML 1.0.0.
   toml-test by category.
 
 Not goals: reformatting/pretty-printing, TOML 1.1 draft features, struct
-unmarshalling (BurntSushi already does that), concurrency safety.
+unmarshalling ([BurntSushi/toml](https://github.com/BurntSushi/toml) already does that), concurrency safety.
 Path sugar does not traverse arrays of tables — navigate `Get("x").Array()`
 and edit elements (`Set(i, *Table)`, `Append(*Table)`) instead.
 `Set` accepts `bool`, `int`, `int64`, `float64`, `string`, `Datetime`,
@@ -138,12 +140,12 @@ BenchmarkEdit1000       3.6 ms/op    (parse + one SetPath + write-back)
 ```
 
 This is a fidelity-first library: the tree keeps every byte of formatting,
-so parse throughput is not the goal (BurntSushi/go-toml are 5-10x faster
+so parse throughput is not the goal (BurntSushi/toml and go-toml v2 are 5-10x faster
 parsers). For config-file editing workloads it is instant.
 
 ## Splitting work with BurntSushi/toml
 
-Use BurntSushi when you decode into structs and re-write from scratch.
+Use BurntSushi/toml when you decode into structs and re-write from scratch.
 Use go-tomlkit when the file belongs to a human and must come back the way
 they left it.
 
