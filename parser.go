@@ -15,7 +15,10 @@ func parse(data []byte) (*Document, *ParseError) {
 	if perr != nil {
 		return nil, perr
 	}
-	p := &parser{data: data, toks: toks, doc: &Document{root: &Table{items: map[string]Item{}}}}
+	root := &Table{items: map[string]Item{}}
+	doc := &Document{root: root}
+	root.doc = doc
+	p := &parser{data: data, toks: toks, doc: doc}
 	return p.run()
 }
 

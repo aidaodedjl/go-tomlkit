@@ -4,6 +4,7 @@ package tomlkit
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -34,10 +35,17 @@ func (t *Table) Set(name string, v any) error {
 			return nil
 		}
 		// 区块形态（表/AoT）被标量替换：区块移除，按追加处理
-		t.Delete(name)
+		t.removeItem(name)
 	}
 	eol, seq := t.appendStyle()
 	d := decor{keyRaw: quoteKeyIfNeeded(name), sep: " = ", eol: eol, seq: seq}
+	// 边界表头的尾注释段挪到新行之前（对齐 Python：新键落在表尾注释之后）
+	if h := nextHeaderEntryAfter(rootOf(t), seq); h != nil {
+		if rest, comments := splitTrailingComments(h.d.prefix); comments != "" {
+			h.d.prefix = rest
+			d.prefix = comments
+		}
+	}
 	setNodeDecor(node, d)
 	t.set(name, node)
 	return nil
@@ -268,34 +276,49 @@ func (a *Array) Set(index int, v any) error {
 	return nil
 }
 
-// appendTableStyle 返回追加新表区块的 eol 与 seq（文档/父区块末尾）。
-func (t *Table) appendTableStyle() (string, float64) {
-	eol := t.appendEOL()
-	maxSeq := float64(0)
-	// 全部成员取最大行序（keys 顺序 ≠ 文件行序，晚定义/交错形态）
-	for _, k := range t.keys {
-		maxSeq = maxSeqOfItem(t.items[k], maxSeq)
-	}
-	if t.hasHeader && t.d.seq > maxSeq {
-		maxSeq = t.d.seq
-	}
-	return eol, maxSeq + 1
-}
-
 // appendStyle 返回表内追加 kv 的 eol 与 seq。新 kv 必须落在该表的
 // kv 区末尾：最后一个 kv 之后、下一个子表头之前（root 的 kv 渲染在
 // 任何表头之后就语义错位，属于父表）。
 func (t *Table) appendStyle() (string, float64) {
 	eol := t.appendEOL()
 	anchor, firstHeader := t.insertAnchor()
+	// 全树边界感知：本表 kv 区的物理边界是行流中 scanFrom 之后的
+	// 第一个任意表头（不限于本表子树——中间夹的无关表同样是边界）。
+	// anchor=0（无锚语境）时以宿主链最近表头为下限，否则祖先自身的
+	// 表头会被当成边界，新键落到语境之外。
+	scanFrom := anchor
+	if scanFrom == 0 {
+		for p := t; p != nil; p = p.owner {
+			if p.hasHeader {
+				scanFrom = p.d.seq
+				break
+			}
+		}
+	}
+	mergeHeader := func() {
+		if fh := nextHeaderAfter(rootOf(t), scanFrom); fh > 0 && (firstHeader == 0 || fh < firstHeader) {
+			firstHeader = fh
+		}
+	}
+	mergeHeader()
 	if firstHeader > 0 {
 		if anchor > 0 && anchor < firstHeader {
 			mid := (anchor + firstHeader) / 2
 			if mid == anchor || mid == firstHeader {
-				// 中点精度耗尽：把 firstHeader 起的成员平移腾出整数位
+				// 中点精度耗尽：把 firstHeader 起的行平移腾出整数位
 				shift := (anchor + 2) - firstHeader
-				t.shiftMembersFrom(firstHeader, shift)
+				shiftTreeFrom(rootOf(t), firstHeader, shift)
 				anchor, firstHeader = t.insertAnchor()
+				scanFrom = anchor
+				if scanFrom == 0 {
+					for p := t; p != nil; p = p.owner {
+						if p.hasHeader {
+							scanFrom = p.d.seq
+							break
+						}
+					}
+				}
+				mergeHeader()
 				mid = (anchor + firstHeader) / 2
 			}
 			return eol, mid
@@ -304,12 +327,24 @@ func (t *Table) appendStyle() (string, float64) {
 		return eol, firstHeader - 0.5
 	}
 	if anchor > 0 {
-		return eol, anchor + 0.5 // 半步：不与任何整数行 seq 平局
+		seq := anchor + 0.5 // 半步：不与任何整数行 seq 平局
+		return eol, ensureSeqGap(t, seq)
 	}
 	if t.hasHeader {
-		return eol, t.d.seq + 0.5 // 空表：紧跟表头
+		seq := t.d.seq + 0.5 // 空表：紧跟表头
+		return eol, ensureSeqGap(t, seq)
 	}
-	return eol, 1
+	return eol, ensureSeqGap(t, 1)
+}
+
+// ensureSeqGap kv 追加 seq 的边界兜底：向空表逐键追加时行位预留不足
+// （追加空表时 need 按空表计），连续半步会追上边界表头。seq 与行流中
+// 已有表头平局或越界时平移该表头起的后继行腾位。
+func ensureSeqGap(t *Table, seq float64) float64 {
+	if h := nextHeaderAfter(rootOf(t), seq); h > 0 && h <= seq {
+		shiftTreeFrom(rootOf(t), h, seq-h+2)
+	}
+	return seq
 }
 
 // insertAnchor 返回 kv 追加的锚点（本语境最大 kv 与自身表头的较大者，
@@ -623,12 +658,11 @@ func formatDatetime(d *Datetime) string {
 }
 
 // setTable 整表替换（行为规范 5）：表头行留在原位置（含前导注释），
-// 区块内容整体替换；键原先不存在则文件末尾追加新表并前置空行（规范 6）。
+// 区块内容整体替换；键原先不存在则文件末尾追加新表（规范 6）。
 func (t *Table) setTable(name string, nt *Table) error {
 	if nt == nil {
 		return fmt.Errorf("tomlkit: nil table value")
 	}
-	eol, nextSeq := t.appendTableStyle()
 	if existing, ok := t.items[name]; ok {
 		old, isTable := existing.(*Table)
 		if isTable && old.hasHeader {
@@ -637,6 +671,7 @@ func (t *Table) setTable(name string, nt *Table) error {
 			nt.d = old.d
 			nt.hasHeader = true
 			newTail := assignTableContent(nt, old.d.eol, old.d.seq)
+			nt.owner = t
 			t.set(name, nt)
 			t.shiftLinesAfter(tailEnd, newTail, nt)
 			return nil
@@ -648,23 +683,226 @@ func (t *Table) setTable(name string, nt *Table) error {
 			nt.d = first.d
 			nt.hasHeader = true
 			newTail := assignTableContent(nt, first.d.eol, first.d.seq)
+			nt.owner = t
 			t.set(name, nt)
 			t.shiftLinesAfter(tailEnd, newTail, nt)
 			return nil
 		}
 		// 非表条目（标量等）被表替换：按末尾新表处理，同时清掉旧条目
-		t.Delete(name)
+		t.removeItem(name)
 	}
-	// 末尾追加新表：前置一个空行（空文档首表除外）
+	// —— 末尾追加新表 ——
+	// 行流边界感知定位：子树视角的 maxSeq+1 可能与行流中无关区块的
+	// 表头平局，新表内容会溢出进别人的区块（语义破坏）。新表头+内容
+	// 占连续整数行位 [start, start+need-1]，后继表头边界不足时先平移腾位。
+	root := rootOf(t)
+	maxSeq := float64(0)
+	for _, k := range t.keys {
+		maxSeq = maxSeqOfItem(t.items[k], maxSeq)
+	}
+	// 无尾换行探测（须在 appendEOL 补换行之前）：原文末行无 eol 时
+	// 追加新表只补末行换行、不前置空行（对齐 Python 探针 R4）
+	hadNoEOL := len(t.keys) > 0 && deepEolOf(t.items[t.keys[len(t.keys)-1]]) == ""
+	eol := t.appendEOL()
+	start := math.Floor(maxSeq) + 1
+	need := countTableLines(nt)
+	if h := nextHeaderAfter(root, maxSeq); h > 0 && start+float64(need)-1 >= h {
+		shiftTreeFrom(root, h, start+float64(need)-h)
+	}
+	// prefix 规则：空文档首表/无尾换行 → 无前置空行；文档尾追加时
+	// 文件尾空行区并入 prefix 全部保留；中位落点时复用后继表头
+	// prefix 的前导空行区（原文空行成为新表前置分隔，剩余直连）；
+	// 其余前置一个空行
 	prefix := t.dominantEOL()
-	if nextSeq <= 1 {
+	if start <= 1 || hadNoEOL {
 		prefix = ""
 	}
-	nt.d = decor{prefix: prefix, keyRaw: joinKeyPath(t, name), eol: eol, seq: nextSeq}
+	if succ := nextHeaderEntryAfter(root, maxSeq); succ != nil {
+		// 落点后继表头的前导空行区转移给新表（对齐 Python：新表
+		// 消费落点处已有空行，不重复造空行）
+		if blanks := leadingBlanks(succ.d.prefix); blanks != "" {
+			succ.d.prefix = strings.TrimPrefix(succ.d.prefix, blanks)
+			prefix = blanks
+		}
+	} else if root.doc != nil && isBlankTrail(root.doc.trailing) {
+		// 文档尾落点（Python 探针实测）：表头文档整表 append = 尾空行区
+		// 转移到表前 + 1 空行（fuzz case1）；纯 kv 文档 = 尾空行区保留
+		// 原位即分隔、prefix 0（kv 文档 append 实测）；子表挂载 = 尾空
+		// 行区全部转移（EOFTailBlanks max(n,1)，n=0 时维持 1 空行）
+		if t != root {
+			prefix = root.doc.trailing
+			root.doc.trailing = ""
+		} else if rootHasHeaderBlock(root) {
+			prefix = root.doc.trailing + prefix
+			root.doc.trailing = ""
+		} else {
+			prefix = ""
+		}
+	}
+	nt.d = decor{prefix: prefix, keyRaw: joinKeyPath(t, name), eol: eol, seq: start}
 	nt.hasHeader = true
-	assignTableContent(nt, eol, nextSeq)
+	nt.constructed = true
+	nt.owner = t
+	assignTableContent(nt, eol, start)
 	t.set(name, nt)
 	return nil
+}
+
+// isBlankTrail 报告文件尾原文是否全为空行。
+func isBlankTrail(s string) bool {
+	return s != "" && strings.Trim(s, "\n") == ""
+}
+
+// leadingBlanks 返回 prefix 的前导空行区（连续 LF，LF 文件语义）。
+func leadingBlanks(prefix string) string {
+	i := 0
+	for i < len(prefix) && prefix[i] == '\n' {
+		i++
+	}
+	return prefix[:i]
+}
+
+// ── 行流边界工具 ──────────────────────────────────────────────
+// 追加/删除定位必须感知全文档行流：子树视角算出的 seq 可能落进
+// 其它表的区块（语义破坏），以下工具统一以全树为扫描范围。
+
+// rootOf 沿宿主链上溯返回根表。
+func rootOf(t *Table) *Table {
+	for t.owner != nil {
+		t = t.owner
+	}
+	return t
+}
+
+// nextHeaderAfter 返回全树行流中 seq 大于 from 的最小表头 seq，无则 0。
+func nextHeaderAfter(root *Table, from float64) float64 {
+	h := nextHeaderEntryAfter(root, from)
+	if h == nil {
+		return 0
+	}
+	return h.d.seq
+}
+
+// nextHeaderEntryAfter 返回全树行流中 seq 大于 from 的最小表头所在表。
+func nextHeaderEntryAfter(root *Table, from float64) *Table {
+	var best *Table
+	var walk func(t *Table)
+	walk = func(t *Table) {
+		if t.hasHeader && t.d.seq > from && (best == nil || t.d.seq < best.d.seq) {
+			best = t
+		}
+		for _, k := range t.keys {
+			switch e := t.items[k].(type) {
+			case *Table:
+				walk(e)
+			case *Array:
+				if e.aot {
+					for _, el := range e.items {
+						if ft, ok := el.(*Table); ok {
+							walk(ft)
+						}
+					}
+				}
+			}
+		}
+	}
+	walk(root)
+	return best
+}
+
+// subtreeMaxSeq 表子树（穿透全部成员）的最大行 seq。
+func subtreeMaxSeq(t *Table) float64 {
+	return maxSeqOfItem(t, 0)
+}
+
+// firstHeaderOf 表子树中 seq 最小的表头所在表（自身或子孙）。
+func firstHeaderOf(t *Table) *Table {
+	var best *Table
+	var walk func(tb *Table)
+	walk = func(tb *Table) {
+		if tb.hasHeader && (best == nil || tb.d.seq < best.d.seq) {
+			best = tb
+		}
+		for _, k := range tb.keys {
+			if e, ok := tb.items[k].(*Table); ok {
+				walk(e)
+			}
+		}
+	}
+	walk(t)
+	return best
+}
+
+// countTableLines 构造表的渲染行数（表头 + kv 行；数组按单行计——
+// 构造语境的数组均为单行形态）。
+func countTableLines(t *Table) int {
+	n := 1
+	for _, k := range t.keys {
+		switch e := t.items[k].(type) {
+		case *Table:
+			n += countTableLines(e)
+		case *Array:
+			if e.aot {
+				for _, el := range e.items {
+					if ft, ok := el.(*Table); ok {
+						n += countTableLines(ft)
+					}
+				}
+			} else {
+				n++
+			}
+		default:
+			n++
+		}
+	}
+	return n
+}
+
+// shiftTreeFrom 递归平移树中行 seq ≥ from 的条目（表头在 from 之后的
+// 整块平移；表头在前但区块内有后续行的递归进内部）。用于追加定位
+// 腾出整数行位。
+func shiftTreeFrom(t *Table, from, shift float64) {
+	if shift <= 0 {
+		return
+	}
+	for _, k := range t.keys {
+		it := t.items[k]
+		if tb, ok := it.(*Table); ok {
+			if tb.hasHeader && tb.d.seq >= from {
+				shiftTableSeqs(tb, shift)
+				continue
+			}
+			shiftTreeFrom(tb, from, shift)
+			continue
+		}
+		if entrySeqOfItem(it) >= from {
+			shiftItemSeqs(it, shift)
+		}
+	}
+}
+
+// splitTrailingComments 把表头 prefix 尾部的连续注释段剥出：
+// prefix = rest + comments + 空行区，返回 rest+空行区 与 注释段。
+// 用于 kv 追加时把边界表头的尾注释挪到新行之前（对齐 Python：
+// 新键落在表尾注释之后）。
+func splitTrailingComments(prefix string) (rest, comments string) {
+	if prefix == "" || !strings.Contains(prefix, "#") {
+		return prefix, ""
+	}
+	lines := strings.Split(prefix, "\n")
+	i := len(lines)
+	for i > 0 && strings.TrimSpace(lines[i-1]) == "" {
+		i--
+	}
+	j := i
+	for j > 0 && strings.HasPrefix(strings.TrimSpace(lines[j-1]), "#") {
+		j--
+	}
+	if j == i {
+		return prefix, ""
+	}
+	tail := append(append([]string{}, lines[:j]...), lines[i:]...)
+	return strings.Join(tail, "\n"), strings.Join(lines[j:i], "\n") + "\n"
 }
 
 func entrySeqOfItem(it Item) float64 {
@@ -1183,4 +1421,25 @@ func collectSeqs(t *Table, out []float64) []float64 {
 		}
 	}
 	return out
+}
+
+// rootHasHeaderBlock 根层是否存在表头区块（表头文档 vs 纯 kv 文档判别）。
+func rootHasHeaderBlock(root *Table) bool {
+	for _, k := range root.keys {
+		if isBlockItem(root.items[k]) {
+			return true
+		}
+	}
+	return false
+}
+
+// isBlockItem 表/AoT 区块形态条目。
+func isBlockItem(it Item) bool {
+	switch e := it.(type) {
+	case *Table:
+		return e.hasHeader
+	case *Array:
+		return e.aot
+	}
+	return false
 }

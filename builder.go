@@ -4,7 +4,10 @@ package tomlkit
 
 // NewDocument 返回一个空文档。
 func NewDocument() *Document {
-	return &Document{root: &Table{items: map[string]Item{}}}
+	root := &Table{items: map[string]Item{}}
+	doc := &Document{root: root}
+	root.doc = doc
+	return doc
 }
 
 // NewTable 返回一个空表。用于 Set 的整表替换或从零构建。

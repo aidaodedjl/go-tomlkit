@@ -1,5 +1,7 @@
 package tomlkit
 
+import "strings"
+
 // Table 是 TOML 表。标准表（[x] 形态）与内联表共用此结构，
 // InlineTable 是它的类型别名约束（见 item.go）。
 type Table struct {
@@ -13,6 +15,8 @@ type Table struct {
 	pathSeg       string          // 穿透链路径段（无表头节点上新建子表时拼表头用）
 	owner         *Table          // 宿主表（嵌套区块行平移时上溯用；root/独立表为 nil）
 	inlineSeps    []string        // inline 语境下本表成员间的原文分隔（dotted 组内保真）
+	constructed   bool            // 由 Set 追加的构造表（纯容器形态不渲染自身表头，对齐 Python super table）
+	doc           *Document       // 根表上的文档反指针（尾空行区转移用）
 }
 
 // set 插入或覆盖一个键，维护出现序。
@@ -59,12 +63,24 @@ func (d *Document) Keys() []string {
 	return d.root.Keys()
 }
 
-// Delete 删除键。条目连同其前导注释（decor.prefix）一起移除，
-// 其余内容不变；表删除删整个区块。键不存在返回 false。
+// Delete 删除键。kv 条目连同其前导注释（decor.prefix）一起移除；
+// 表条目删整个区块，区块 trivia 按 Python tomlkit 探针规则处理
+// （M3：被删首表头的 prefix 转移给行流后继表头——块前注释保留；
+// 被删 prefix 为空时剥后继表头 prefix 的首个空行——块尾空行随块删）。
+// 键不存在返回 false。
 func (t *Table) Delete(name string) bool {
 	if _, ok := t.items[name]; !ok {
 		return false
 	}
+	if old, isTable := t.items[name].(*Table); isTable {
+		transferHeaderTrivia(rootOf(t), old)
+	}
+	t.removeItem(name)
+	return true
+}
+
+// removeItem 仅移除条目（不做 trivia 转移，Set 的替换路径用）。
+func (t *Table) removeItem(name string) {
 	delete(t.items, name)
 	for i, k := range t.keys {
 		if k == name {
@@ -72,7 +88,29 @@ func (t *Table) Delete(name string) bool {
 			break
 		}
 	}
-	return true
+}
+
+// transferHeaderTrivia 删除表区块时的 trivia 归位（root 为全树根）。
+func transferHeaderTrivia(root, old *Table) {
+	succ := nextHeaderEntryAfter(root, subtreeMaxSeq(old))
+	if succ == nil {
+		// 文档尾区块：块尾空行区随块删（对齐 Python：删除文档尾表后
+		// append 的空行分布——fuzz case3）；尾注释保留
+		if root.doc != nil && isBlankTrail(root.doc.trailing) {
+			root.doc.trailing = ""
+		}
+		return
+	}
+	first := firstHeaderOf(old)
+	victim := ""
+	if first != nil {
+		victim = first.d.prefix
+	}
+	if victim != "" {
+		succ.d.prefix = victim
+	} else if strings.HasPrefix(succ.d.prefix, "\n") {
+		succ.d.prefix = strings.TrimPrefix(succ.d.prefix, "\n")
+	}
 }
 
 // Delete 是根表 Delete。

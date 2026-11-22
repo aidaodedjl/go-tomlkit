@@ -25,7 +25,7 @@ func TestBuilderFromScratch(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := doc.String()
-	want := "play_audio = true\n\n[actions]\n\n[actions.wave]\nname = \"wave\"\nvolume = 0.8\n"
+	want := "play_audio = true\n\n[actions.wave]\nname = \"wave\"\nvolume = 0.8\n"
 	if out != want {
 		t.Fatalf("从零构建不符：\n%q\nwant %q", out, want)
 	}

@@ -54,12 +54,27 @@ func renderTableInto(sb *strings.Builder, t *Table, prefix string) {
 
 func (t *Table) lineChunks(prefix string) []lineChunk {
 	var chunks []lineChunk
-	if t.hasHeader {
+	if t.hasHeader && !t.suppressHeader() {
 		chunks = append(chunks, t.headerChunk())
 		prefix = "" // 有表头：独立渲染语境
 	}
 	chunks = append(chunks, t.memberChunksAll(prefix)...)
 	return chunks
+}
+
+// suppressHeader 构造来的纯容器表不渲染自身表头（对齐 Python tomlkit
+// super table：table() 装的全是子表时不产出 [x] 行，只有空表或含直接
+// kv 时才需要表头）。解析来的表头是原文行，永不抑制。
+func (t *Table) suppressHeader() bool {
+	if !t.constructed || len(t.keys) == 0 {
+		return false
+	}
+	for _, k := range t.keys {
+		if _, isTable := t.items[k].(*Table); !isTable {
+			return false
+		}
+	}
+	return true
 }
 
 // lineChunksWithHeaderPrefix 渲染穿透链中的有表头表：表头路径拼前缀。

@@ -53,7 +53,9 @@ func (d *Document) SetPathKeys(keys []string, v any) error {
 		return fmt.Errorf("tomlkit: empty path")
 	}
 	if d.root == nil {
-		d.root = &Table{items: map[string]Item{}}
+		root := &Table{items: map[string]Item{}}
+		d.root = root
+		root.doc = d
 	}
 	for _, k := range keys {
 		if err := validateKey(k); err != nil {
