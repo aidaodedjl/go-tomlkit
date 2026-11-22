@@ -696,7 +696,12 @@ func (t *Table) setTable(name string, nt *Table) error {
 	// 表头平局，新表内容会溢出进别人的区块（语义破坏）。新表头+内容
 	// 占连续整数行位 [start, start+need-1]，后继表头边界不足时先平移腾位。
 	root := rootOf(t)
+	// 基线取父表自身行位：空壳容器（挂载后再挂子表）没有条目可扫，
+	// 没有基线会把新表头排到行流前部、与既有 kv 平局错位（T7）。
 	maxSeq := float64(0)
+	if t.hasHeader {
+		maxSeq = t.d.seq
+	}
 	for _, k := range t.keys {
 		maxSeq = maxSeqOfItem(t.items[k], maxSeq)
 	}
